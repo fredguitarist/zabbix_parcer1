@@ -1,7 +1,6 @@
 import requests
 import urllib3
 import time
-from datetime import datetime, timedelta
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -25,11 +24,10 @@ def zabbix_api(method, params, auth_token=None):
         exit(1)
     return res['result']
 
-def get_average_memory_utilization(auth, hostid):
-    # Получаем элемент с ключом vm.memory.utilization
+def get_average_utilization(auth, hostid, key):
     items = zabbix_api('item.get', {
         "hostids": hostid,
-        "search": {"key_": "vm.memory.utilization"},
+        "search": {"key_": key},
         "output": ["itemid"]
     }, auth)
     
@@ -38,11 +36,9 @@ def get_average_memory_utilization(auth, hostid):
     
     itemid = items[0]['itemid']
     
-    # Время за последний месяц
     now = int(time.time())
     month_ago = now - 30*24*60*60
     
-    # Получаем историю (тип 0 = float) за последний месяц
     history = zabbix_api('history.get', {
         "history": 0,
         "itemids": itemid,
@@ -58,8 +54,7 @@ def get_average_memory_utilization(auth, hostid):
         return None
     
     values = [float(entry['value']) for entry in history]
-    avg = sum(values) / len(values)
-    return avg
+    return sum(values) / len(values)
 
 def main():
     auth = zabbix_api('user.login', {
@@ -72,7 +67,7 @@ def main():
         "selectInterfaces": ["ip"]
     }, auth)
 
-    print(f"{'Хост':<30}\t{'IP':<15}\tСредняя утилизация памяти за месяц (%)")
+    print(f"{'Хост':<30}\t{'IP':<15}\t{'Средняя утилизация памяти (%)':<28}\t{'Средняя утилизация CPU (%)':<27}\t{'Средняя утилизация диска (%)':<28}")
 
     for host in hosts:
         hostid = host['hostid']
@@ -80,11 +75,15 @@ def main():
         interfaces = host.get("interfaces", [])
         ip = interfaces[0].get("ip", "N/A") if interfaces else "N/A"
 
-        avg_utilization = get_average_memory_utilization(auth, hostid)
-        if avg_utilization is None:
-            print(f"{hostname:<30}\t{ip:<15}\tНет данных")
-        else:
-            print(f"{hostname:<30}\t{ip:<15}\t{avg_utilization:.2f}%")
+        avg_mem = get_average_utilization(auth, hostid, "vm.memory.utilization")
+        avg_cpu = get_average_utilization(auth, hostid, "system.cpu.util")
+        avg_disk = get_average_utilization(auth, hostid, "vfs.dev.util[vda]")
+
+        mem_str = f"{avg_mem:.2f}%" if avg_mem is not None else "Нет данных"
+        cpu_str = f"{avg_cpu:.2f}%" if avg_cpu is not None else "Нет данных"
+        disk_str = f"{avg_disk:.2f}%" if avg_disk is not None else "Нет данных"
+
+        print(f"{hostname:<30}\t{ip:<15}\t{mem_str:<28}\t{cpu_str:<27}\t{disk_str:<28}")
 
     zabbix_api('user.logout', {}, auth)
 
