@@ -39,31 +39,27 @@ def main():
     for host in hosts:
         hostid = host['hostid']
         hostname = host['name']
-        ip = host.get("interfaces", [{}])[0].get("ip", "N/A")
+        interfaces = host.get("interfaces", [])
+        ip = interfaces[0].get("ip", "N/A") if interfaces else "N/A"
 
-        used_items = zabbix_api('item.get', {
+        items = zabbix_api('item.get', {
             "hostids": hostid,
-            "search": {"key_": "vm.memory.size[used]"},
+            "search": {"key_": "vm.memory.utilization"},
             "output": ["lastvalue"]
         }, auth)
 
-        total_items = zabbix_api('item.get', {
-            "hostids": hostid,
-            "search": {"key_": "vm.memory.size[total]"},
-            "output": ["lastvalue"]
-        }, auth)
-
-        if not used_items or not total_items:
+        if not items:
             print(f"{hostname:<30}\t{ip:<15}\tНет данных")
             continue
 
-        used = float(used_items[0]['lastvalue'])
-        total = float(total_items[0]['lastvalue'])
-
-        utilization = (used / total) * 100 if total else 0
-        print(f"{hostname:<30}\t{ip:<15}\t{utilization:.2f}%")
+        try:
+            utilization = float(items[0]['lastvalue'])
+            print(f"{hostname:<30}\t{ip:<15}\t{utilization:.2f}%")
+        except Exception:
+            print(f"{hostname:<30}\t{ip:<15}\tОшибка данных")
 
     zabbix_api('user.logout', {}, auth)
 
 if __name__ == '__main__':
     main()
+
